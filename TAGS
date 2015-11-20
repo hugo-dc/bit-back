@@ -1,0 +1,41 @@
+
+c:/Users/IBM_ADMIN/workspace/bndb/src\Main.hs,1316
+module Main Main2,3
+data Result Result13,14
+data Result = Result Result13,14
+data Result = Result { successR successR13,14
+                       messageR messageR15,16
+data Notebook Notebook18,19
+data Notebook = Notebook Notebook18,19
+data Notebook = Notebook { nbId nbId18,19
+                           nbName nbName19,20
+                           nbDesc nbDesc20,21
+                           nbIcon nbIcon21,22
+                           nbClick nbClick22,23
+                           nbNotes nbNotes23,24
+data Note Note26,27
+data Note = Note Note26,27
+data Note = Note { parentId parentId26,27
+                   ntId ntId27,28
+                   ntYear ntYear28,29
+                   ntMonth ntMonth29,30
+                   ntDay ntDay30,31
+                   nTitle nTitle31,32
+                   nContent nContent32,33
+                   nHtml nHtml33,34
+dbFile dbFile47,48
+getNotebooks getNotebooks49,50
+getNotebooks getNotebooks50,51
+notebookExists notebookExists59,60
+notebookExists notebookExists60,61
+appendNotebook appendNotebook64,65
+appendNotebook appendNotebook65,66
+addNotebook addNotebook67,68
+addNotebook addNotebook68,69
+createNotebook createNotebook75,76
+createNotebook createNotebook76,77
+main main91,92
+main main92,93
+
+c:/Users/IBM_ADMIN/workspace/bndb/Setup.hs,15
+main main1,2
