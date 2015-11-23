@@ -1,11 +1,14 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
+import           Control.Applicative
 import           Control.Monad.IO.Class (liftIO)
 import           Data.Aeson (FromJSON, ToJSON, decode, encode)
 import qualified Data.ByteString.Lazy.Char8 as BS
 import           Data.Monoid ((<>))
 import           Data.Text.Lazy
+import           Database.SQLite.Simple
+import           Database.SQLite.Simple.FromRow
 import           GHC.Generics
 import           System.Directory
 import           System.IO
@@ -20,8 +23,8 @@ data Notebook = Notebook { nbId   :: Int,
                            nbName :: String,
                            nbDesc :: String,
                            nbIcon :: String,
-                           nbClick :: String,                           
-                           nbNotes :: [Note]
+                           nbClick :: String
+--                           nbNotes :: [Note]
                          } deriving (Show, Generic)
 
 data Note = Note { parentId :: Int,
@@ -37,6 +40,9 @@ data Note = Note { parentId :: Int,
 instance ToJSON Notebook
 instance FromJSON Notebook
 
+instance FromRow Notebook where
+         fromRow = Notebook <$> field <*> field
+
 instance ToJSON Note
 instance FromJSON Note
 
@@ -45,29 +51,24 @@ instance FromJSON Result
 
 instance Read Notebook
 
-dbFile = "resources/nbs.json"
-
-getNotebooks :: IO [Notebook]
-getNotebooks = do
-  putStrLn "Checking if database exists..."
-  fEx <- doesFileExist dbFile
-  if fEx then do
-    nbstx <- readFile "resources/nbs.json"
-    let nbs = (decode (BS.pack nbstx) :: Maybe [Notebook])
-    case nbs of
-      Nothing -> return []
-      Just x  -> return x
-  else
-    return []
+dbFile = "resources/database"
 
 notebookExists :: Text -> IO Bool
 notebookExists name = do
-  nbs <- getNotebooks
-  putStrLn "Notebooks retrieved"
-  putStrLn $ show nbs
-  let nbex = name `elem` (Prelude.map (pack . nbName) nbs)
-  putStrLn $ show nbex
-  return nbex
+  conn <- open dbFile
+  let stName = unpack name
+  r <- query conn "SELECT * FROM notebooks WHERE name = ?" [(unpack name)] :: IO [Notebook]
+  let ex = (unpack name) `elem` (Prelude.map nbName r)
+  close conn
+  return ex
+
+
+addNotebook :: Text -> IO ()
+addNotebook name = do
+  conn <- open dbFile
+  execute conn "INSERT INTO notebooks (name) VALUES (?)"
+    (Only name)
+  close conn
 
 createNotebook :: Text -> ActionM Result
 createNotebook name = do
