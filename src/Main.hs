@@ -41,7 +41,7 @@ instance ToJSON Notebook
 instance FromJSON Notebook
 
 instance FromRow Notebook where
-         fromRow = Notebook <$> field <*> field
+  fromRow = Notebook <$> field <*> field <*> field <*> field <*> field
 
 instance ToJSON Note
 instance FromJSON Note
@@ -57,8 +57,8 @@ notebookExists :: Text -> IO Bool
 notebookExists name = do
   conn <- open dbFile
   let stName = unpack name
-  r <- query conn "SELECT * FROM notebooks WHERE name = ?" [(unpack name)] :: IO [Notebook]
-  let ex = (unpack name) `elem` (Prelude.map nbName r)
+  r <- query conn "SELECT name FROM notebooks WHERE name = ?" [(unpack name)] :: IO [[String]]
+  let ex = (unpack name) `elem`  (Prelude.concat r)
   close conn
   return ex
 
@@ -67,7 +67,7 @@ addNotebook :: Text -> IO ()
 addNotebook name = do
   conn <- open dbFile
   execute conn "INSERT INTO notebooks (name) VALUES (?)"
-    (Only name)
+    (Only (name))
   close conn
 
 createNotebook :: Text -> ActionM Result
