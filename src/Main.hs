@@ -43,6 +43,9 @@ instance FromJSON Notebook
 instance FromRow Notebook where
   fromRow = Notebook <$> field <*> field <*> field <*> field <*> field
 
+instance ToRow Notebook where
+  toRow (Notebook id name desc icon click) = toRow (name, desc, icon, click)
+
 instance ToJSON Note
 instance FromJSON Note
 
@@ -63,29 +66,31 @@ notebookExists name = do
   return ex
 
 
-addNotebook :: Text -> IO ()
-addNotebook name = do
+addNotebook :: Text -> Text -> IO ()
+addNotebook name desc = do
   conn <- open dbFile
-  execute conn "INSERT INTO notebooks (name) VALUES (?)"
-    (Only (name))
+  execute conn "INSERT INTO notebooks (name, description, icon, click) VALUES (?, ?, ?, ?)"
+    (Notebook 0 (unpack name) (unpack desc) "" "")
+
   close conn
 
-createNotebook :: Text -> ActionM Result
-createNotebook name = do
+createNotebook :: Text -> Text -> ActionM Result
+createNotebook name desc = do
   nbEx <- liftIO (notebookExists name)
   if nbEx then 
     return $ Result False "Notebook already exists!"
   else do
-    liftIO $ addNotebook name 
+    liftIO $ addNotebook name desc
     return $ Result True "Notebook created"
 
 main :: IO ()
 main = do
   putStrLn "Starting server..."
   scotty 3000 $ do
-    get "/create-notebook/:name" $ do
+    get "/create-notebook/:name/:desc" $ do
       name <- param "name"
-      result <- createNotebook name
+      desc <- param "desc"
+      result <- createNotebook name desc
       json result
 --      text ( "Creating note " <> name )
 --    get "/users" $ do
@@ -93,3 +98,4 @@ main = do
 --    get "/users/:id" $ do
 --      id <- param "id"
 --      json (filter (matchesId id) allUsers)
+
