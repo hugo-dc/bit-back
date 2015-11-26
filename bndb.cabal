@@ -25,3 +25,4 @@ executable bndb
                      , scotty
                      , text
                      , time
+                     , process
