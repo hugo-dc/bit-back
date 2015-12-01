@@ -6,7 +6,7 @@ import           Control.Monad.IO.Class (liftIO)
 import           Data.Aeson (FromJSON, ToJSON, decode, encode)
 import qualified Data.ByteString.Lazy.Char8 as BS
 import           Data.Monoid ((<>))
-import           Data.Text.Lazy (Text, unpack)
+import           Data.Text.Lazy (Text, unpack, pack)
 import           Data.Time.Calendar
 import           Data.Time.Clock
 import           Data.Time.Clock.POSIX
@@ -113,8 +113,8 @@ createDefaultNote name = do
   defmd <- getDefaultMarkdown
   html  <- getHtml defmd
   conn  <- open dbFile
-  (day, month, year) <- getDMY
-  execute conn "INSERT INTO notes (parent, year, month, day, title, content, html) VALUES (?,?,?,?,?,?,?)" (Note 0 (fromIntegral nbId) year month (fromIntegral day) "Your first note" defmd html)
+  (year, month, day) <- getDMY
+  execute conn "INSERT INTO notes (parent, year, month, day, title, content, html) VALUES (?,?,?,?,?,?,?)" (Note 0 (fromIntegral nbId) (fromIntegral year) month day "Your first note" defmd html)
   close conn
   
 createNotebook :: Text -> Text -> ActionM Result
@@ -142,7 +142,19 @@ getNote' nbook noteid = do
   if null r then
     error "Note not found!"
   else
-    return $ head r          
+    return $ head r
+
+getNotebooks :: ActionM [Notebook]
+getNotebooks = do
+   nbs <- liftIO getNotebooks'
+   return nbs
+
+getNotebooks' :: IO [Notebook]
+getNotebooks' = do
+   conn <- open dbFile
+   r <- query_ conn "SELECT * FROM notebooks" :: IO [Notebook]
+   close conn
+   return r
 
 main :: IO ()
 main = do
@@ -153,6 +165,9 @@ main = do
       desc <- param "desc"
       result <- createNotebook name desc
       json result
+    get "/get-notebooks" $ do
+      nbs <- getNotebooks
+      json nbs
     get "/get-note/:nbook/:noteid" $ do
       nbook  <- param "nbook"
       noteid <- param "noteid"
