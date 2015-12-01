@@ -104,8 +104,30 @@ getHtml markdown = do
    html <- readFile (".\\bin\\_site\\posts\\" ++ fname ++ "-test.html")
    return html
 
-getNotebookId :: Text -> IO Integer
-getNotebookId name = return 1
+safe :: ([t] -> a) -> [t] -> Maybe a
+safe f [] = Nothing
+safe f x = Just (f x)
+
+getByName :: Text -> ActionM Notebook
+getByName name = do
+  nb <- liftIO (getNotebookByName name)
+  case nb of
+    Nothing -> error "Notebook not found"
+    Just n  -> return n
+
+getNotebookByName :: Text -> IO (Maybe Notebook)
+getNotebookByName name = do
+  conn <- open dbFile
+  r <- query conn "SELECT * FROM notebooks WHERE name = ?" [(unpack name)] :: IO [Notebook]
+  return $ safe head r
+  
+getNotebookId :: Text -> IO Int
+getNotebookId name = do
+  nb <- getNotebookByName name
+  case nb of
+    Nothing -> error "Notebook not found"
+    Just n  -> return $  nbId n
+  
 
 createDefaultNote :: Text -> IO ()
 createDefaultNote name = do
@@ -137,7 +159,7 @@ getNote' :: Text -> Integer -> IO Note
 getNote' nbook noteid = do
   nbId <- getNotebookId nbook
   conn <- open dbFile
-  r <- query conn "SELECT * FROM notes WHERE id = ? AND parent = ?" [noteid, nbId] :: IO [Note]
+  r <- query conn "SELECT * FROM notes WHERE id = ? AND parent = ?" [(fromInteger noteid), nbId] :: IO [Note]
   close conn
   if null r then
     error "Note not found!"
@@ -173,6 +195,10 @@ main = do
       noteid <- param "noteid"
       note <- getNote nbook (read noteid :: Integer)
       json note
+    get "/get-notebook-by-name/:nbook" $ do
+      name <- param "nbook"
+      nbook <- getByName name
+      json nbook
 --      text ( "Creating note " <> name )
 --    get "/users" $ do
 --      json allUsers
