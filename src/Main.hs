@@ -41,6 +41,8 @@ data Note = Note { ntId     :: Int,
                    nHtml    :: String
                  } deriving (Show, Generic)
 
+data DBInt = DBInt { dbInt :: Int } deriving (Show)
+
 instance ToJSON Notebook
 instance FromJSON Notebook
 
@@ -57,6 +59,9 @@ instance ToRow Note where
 
 instance FromRow Note where
   fromRow = Note <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+instance FromRow DBInt where
+  fromRow = DBInt <$> field
 
 instance ToJSON Note
 instance FromJSON Note
@@ -108,22 +113,22 @@ safe :: ([t] -> a) -> [t] -> Maybe a
 safe f [] = Nothing
 safe f x = Just (f x)
 
-getByName :: Text -> ActionM Notebook
-getByName name = do
-  nb <- liftIO (getNotebookByName name)
+getNotebookByName :: Text -> ActionM Notebook
+getNotebookByName name = do
+  nb <- liftIO (getNotebookByName' name)
   case nb of
     Nothing -> error "Notebook not found"
     Just n  -> return n
 
-getNotebookByName :: Text -> IO (Maybe Notebook)
-getNotebookByName name = do
+getNotebookByName' :: Text -> IO (Maybe Notebook)
+getNotebookByName' name = do
   conn <- open dbFile
   r <- query conn "SELECT * FROM notebooks WHERE name = ?" [(unpack name)] :: IO [Notebook]
   return $ safe head r
   
 getNotebookId :: Text -> IO Int
 getNotebookId name = do
-  nb <- getNotebookByName name
+  nb <- getNotebookByName' name
   case nb of
     Nothing -> error "Notebook not found"
     Just n  -> return $  nbId n
@@ -178,6 +183,22 @@ getNotebooks' = do
    close conn
    return r
 
+getLastNote :: Int -> ActionM Note
+getLastNote nbid = do
+  note <- liftIO (getLastNote' nbid)
+  return note
+
+getLastNote' :: Int -> IO Note
+getLastNote' nbid = do
+  conn <- open dbFile
+  c <- query conn "SELECT MAX (id) FROM notes WHERE parent = ?" [nbid :: Int] :: IO [DBInt]
+  
+  r <- query conn "SELECT * FROM notes WHERE id = ? AND parent = ? " [(dbInt . head) c , nbid] :: IO [Note]
+  let note = safe head r
+  case note of
+    Nothing -> error "Note not found!"
+    Just n  -> return n
+
 main :: IO ()
 main = do
   putStrLn "Starting server..."
@@ -197,8 +218,12 @@ main = do
       json note
     get "/get-notebook-by-name/:nbook" $ do
       name <- param "nbook"
-      nbook <- getByName name
+      nbook <- getNotebookByName name
       json nbook
+    get "/get-last-note/:nbid" $ do
+      nbid <- param "nbid"
+      note <- getLastNote nbid
+      json note
 --      text ( "Creating note " <> name )
 --    get "/users" $ do
 --      json allUsers
