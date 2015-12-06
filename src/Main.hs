@@ -19,7 +19,6 @@ import           System.Process
 import           Web.Scotty
 
 data Result = Result { successR  :: Bool,
---                       resultR   :: String,
                        messageR  :: String
                      } deriving (Show, Generic)
 
@@ -28,7 +27,6 @@ data Notebook = Notebook { nbId   :: Int,
                            nbDesc :: String,
                            nbIcon :: String,
                            nbClick :: String
---                           nbNotes :: [Note]
                          } deriving (Show, Generic)
 
 data Note = Note { ntId     :: Int,
@@ -45,8 +43,6 @@ data DBInt = DBInt { dbInt :: Int } deriving (Show)
 
 instance ToJSON Notebook
 instance FromJSON Notebook
-
-
 
 instance FromRow Notebook where
   fromRow = Notebook <$> field <*> field <*> field <*> field <*> field
@@ -132,17 +128,27 @@ getNotebookId name = do
   case nb of
     Nothing -> error "Notebook not found"
     Just n  -> return $  nbId n
-  
+
+createNote :: Integer -> Text -> Text -> ActionM Result
+createNote nbid ntitle nmd = do
+  liftIO $ createNote' nbid ntitle nmd
+  return $ Result True "Note created!"
+
+createNote' :: Integer -> Text -> Text -> IO ()
+createNote' nbid ntitle nmd = do
+  html <- getHtml (unpack nmd)
+  conn <- open dbFile
+  (year, month, day) <- getDMY
+  execute conn "INSERT INTO notes (parent, year, month, day, title, content, html) VALUES (?,?,?,?,?,?,?)" (Note 0 (fromIntegral nbid) (fromIntegral year) month day (unpack ntitle) (unpack nmd) html)
+  close conn
 
 createDefaultNote :: Text -> IO ()
 createDefaultNote name = do
   nbId  <- getNotebookId name
   defmd <- getDefaultMarkdown
   html  <- getHtml defmd
-  conn  <- open dbFile
-  (year, month, day) <- getDMY
-  execute conn "INSERT INTO notes (parent, year, month, day, title, content, html) VALUES (?,?,?,?,?,?,?)" (Note 0 (fromIntegral nbId) (fromIntegral year) month day "Your first note" defmd html)
-  close conn
+  createNote' (fromIntegral nbId) "Your First Note" (pack defmd)
+
   
 createNotebook :: Text -> Text -> ActionM Result
 createNotebook name desc = do
@@ -153,7 +159,6 @@ createNotebook name desc = do
     liftIO $ addNotebook name desc
     liftIO $ createDefaultNote name
     return $ Result True "Notebook created"
-
 
 getNote :: Text -> Integer -> ActionM Note
 getNote nbook noteid = do
@@ -203,6 +208,8 @@ main :: IO ()
 main = do
   putStrLn "Starting server..."
   scotty 3000 $ do
+    get "/api-ready" $ do
+      json (Result True "API v0.1")
     get "/create-notebook/:name/:desc" $ do
       name <- param "name"
       desc <- param "desc"
@@ -224,6 +231,12 @@ main = do
       nbid <- param "nbid"
       note <- getLastNote nbid
       json note
+    get "/create-note/:nbid/:ntitle/:nmd" $ do
+      nbid   <- param "nbid"
+      ntitle <- param "ntitle"
+      nmd    <- param "nmd"
+      result <- createNote nbid ntitle nmd
+      json result
 --      text ( "Creating note " <> name )
 --    get "/users" $ do
 --      json allUsers
