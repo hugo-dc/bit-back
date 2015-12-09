@@ -160,13 +160,14 @@ createNotebook name desc = do
     liftIO $ createDefaultNote name
     return $ Result True "Notebook created"
 
-getNote :: Text -> Integer -> ActionM Note
-getNote nbook noteid = do
-  note <- liftIO (getNote' nbook noteid)
+-- | Get note using Notebook Name and Note ID
+getNoteByName :: Text -> Integer -> ActionM Note
+getNoteByName nbook noteid = do
+  note <- liftIO (getNoteByName' nbook noteid)
   return note
 
-getNote' :: Text -> Integer -> IO Note
-getNote' nbook noteid = do
+getNoteByName' :: Text -> Integer -> IO Note
+getNoteByName' nbook noteid = do
   nbId <- getNotebookId nbook
   conn <- open dbFile
   r <- query conn "SELECT * FROM notes WHERE id = ? AND parent = ?" [(fromInteger noteid), nbId] :: IO [Note]
@@ -218,10 +219,10 @@ main = do
     get "/get-notebooks" $ do
       nbs <- getNotebooks
       json nbs
-    get "/get-note/:nbook/:noteid" $ do
+    get "/get-note-by-nb-name/:nbook/:noteid" $ do
       nbook  <- param "nbook"
       noteid <- param "noteid"
-      note <- getNote nbook (read noteid :: Integer)
+      note <- getNoteByName nbook (read noteid :: Integer)
       json note
     get "/get-notebook-by-name/:nbook" $ do
       name <- param "nbook"
