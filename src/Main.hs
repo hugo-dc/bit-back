@@ -168,9 +168,24 @@ getNoteByName nbook noteid = do
 
 getNoteByName' :: Text -> Integer -> IO Note
 getNoteByName' nbook noteid = do
-  nbId <- getNotebookId nbook
+  nbid <- getNotebookId nbook
   conn <- open dbFile
-  r <- query conn "SELECT * FROM notes WHERE id = ? AND parent = ?" [(fromInteger noteid), nbId] :: IO [Note]
+  getNote' (toInteger nbid) noteid
+
+getNote :: Integer -> Integer -> ActionM Note
+getNote nbid ntid = do
+  note <- liftIO (getNote' nbid ntid)
+  return note
+
+getNote' :: Integer -> Integer -> IO Note
+getNote' nbid ntid = do
+  let nb = fromInteger nbid :: Int 
+  let nt = fromInteger ntid :: Int
+  conn <- open dbFile
+  r <- query
+         conn
+         "SELECT * FROM notes WHERE id = ? AND parent = ?"
+         [nt,nb] :: IO [Note]
   close conn
   if null r then
     error "Note not found!"
@@ -219,6 +234,11 @@ main = do
     get "/get-notebooks" $ do
       nbs <- getNotebooks
       json nbs
+    get "/get-note/:nbid/:ntid" $ do
+      nbid <- param "nbid"
+      ntid <- param "ntid"
+      note <- getNote (read nbid :: Integer) (read ntid :: Integer )
+      json note
     get "/get-note-by-nb-name/:nbook/:noteid" $ do
       nbook  <- param "nbook"
       noteid <- param "noteid"
