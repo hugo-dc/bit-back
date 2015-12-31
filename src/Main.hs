@@ -40,6 +40,7 @@ data Note = Note { ntId     :: Int,
                  } deriving (Show, Generic)
 
 data DBInt = DBInt { dbInt :: Int } deriving (Show)
+data DBStr = DBStr { dbStr :: String } deriving (Show)
 
 instance ToJSON Notebook
 instance FromJSON Notebook
@@ -58,6 +59,9 @@ instance FromRow Note where
 
 instance FromRow DBInt where
   fromRow = DBInt <$> field
+
+instance FromRow DBStr where
+  fromRow = DBStr <$> field
 
 instance ToJSON Note
 instance FromJSON Note
@@ -215,10 +219,67 @@ getLastNote' nbid = do
   c <- query conn "SELECT MAX (id) FROM notes WHERE parent = ?" [nbid :: Int] :: IO [DBInt]
   
   r <- query conn "SELECT * FROM notes WHERE id = ? AND parent = ? " [(dbInt . head) c , nbid] :: IO [Note]
+
   let note = safe head r
   case note of
     Nothing -> error "Note not found!"
     Just n  -> return n
+
+getYears :: Integer -> ActionM [Int]
+getYears nbid = do
+  years <- liftIO $ getYears' nbid
+  return years
+
+getYears' :: Integer -> IO [Int]
+getYears' nbid = do
+  conn <- open dbFile
+  c <- query conn "SELECT DISTINCT year FROM notes WHERE parent = ?" [(fromInteger nbid :: Int)] :: IO [DBInt]
+  close conn
+  return $ map dbInt c
+
+getMonths :: Integer -> Integer -> ActionM [Int]
+getMonths nbid year = do
+  months <- liftIO $ getMonths' nbid year
+  return months
+
+getMonths' :: Integer -> Integer -> IO [Int]
+getMonths' nbid year = do
+  conn <- open dbFile
+  c <- query conn "SELECT DISTINCT month FROM notes WHERE parent = ? AND year = ?" [(fromInteger nbid :: Int), (fromInteger year :: Int)] :: IO [DBInt]
+  close conn
+  return $ map dbInt c
+
+getDays :: Integer -> Integer -> Integer -> ActionM [Int]
+getDays nbid year month = do
+  days <- liftIO $ getDays' nbid year month
+  return days
+
+getDays' :: Integer -> Integer -> Integer -> IO [Int]
+getDays' nbid year month = do
+  conn <- open dbFile
+  c <- query conn "SELECT DISTINCT day FROM notes WHERE parent = ? AND year = ? AND month = ?" [(fromInteger nbid :: Int), (fromInteger year :: Int), (fromInteger month :: Int)] :: IO [DBInt]
+  close conn
+  return $ map dbInt c
+
+getNotesByDay :: Integer -> Integer -> Integer -> Integer -> ActionM [String]
+getNotesByDay nbid year month day = do
+  notes <- liftIO $ getNotesByDay' nbid year month day
+  return notes
+
+getNotesByDay' :: Integer -> Integer -> Integer -> Integer -> IO [String]
+getNotesByDay' nbid year month day = do
+  conn <- open dbFile
+  c <- query
+       conn
+       "SELECT title FROM notes WHERE parent = ? AND year = ? AND month = ? AND day = ?" 
+       [(fromInteger nbid :: Int)
+       ,(fromInteger year :: Int)
+       ,(fromInteger month :: Int)
+       ,(fromInteger day   :: Int)]
+       :: IO [DBStr]
+  close conn
+  return $ map dbStr c
+
 
 main :: IO ()
 main = do
@@ -258,10 +319,26 @@ main = do
       nmd    <- param "nmd"
       result <- createNote nbid ntitle nmd
       json result
---      text ( "Creating note " <> name )
---    get "/users" $ do
---      json allUsers
---    get "/users/:id" $ do
---      id <- param "id"
---      json (filter (matchesId id) allUsers)
+    get "/get-years/:nbid" $ do
+      nbid <- param "nbid"
+      years <- getYears nbid
+      json years
+    get "/get-months/:nbid/:year" $ do
+      nbid <- param "nbid"
+      year <- param "year"
+      months <- getMonths nbid year
+      json months
+    get "/get-days/:nbid/:year/:month" $ do
+      nbid <- param "nbid"
+      year <- param "year"
+      month <- param "month"
+      days <- getDays nbid year month
+      json days
+    get "/get-notes-by-day/:nbid/:year/:month/:day" $ do
+      nbid  <- param "nbid"
+      year  <- param "year"
+      month <- param "month"
+      day   <- param "day"
+      notes <- getNotesByDay nbid year month day
+      json notes
 
