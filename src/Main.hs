@@ -133,6 +133,21 @@ getNotebookId name = do
     Nothing -> error "Notebook not found"
     Just n  -> return $  nbId n
 
+updateNote :: Integer -> Text -> Text -> ActionM Result
+updateNote ntid ntitle nmd = do
+  liftIO $ updateNote' ntid ntitle nmd
+  return $ Result True "Note updated!"
+
+updateNote' :: Integer -> Text -> Text -> IO ()
+updateNote' ntid ntitle nmd = do
+  html <- getHtml (unpack nmd)
+  conn <- open dbFile
+  execute conn "UPDATE notes SET title = ? WHERE id = ?"   (unpack ntitle, ntid)
+  execute conn "UPDATE notes SET content = ? WHERE id = ?" (unpack nmd, ntid)
+  execute conn "UPDATE notes SET html = ? WHERE id = ?"    (html, ntid)
+  close conn
+  
+
 createNote :: Integer -> Text -> Text -> ActionM Result
 createNote nbid ntitle nmd = do
   liftIO $ createNote' nbid ntitle nmd
@@ -319,6 +334,12 @@ main = do
       nmd    <- param "nmd"
       result <- createNote nbid ntitle nmd
       json result
+    get "/update-note/:ntid/:ntitle/:nmd" $ do
+      ntid   <- param "ntid"
+      ntitle <- param "ntitle"
+      nmd    <- param "nmd"
+      result <- updateNote ntid ntitle nmd
+      json result
     get "/get-years/:nbid" $ do
       nbid <- param "nbid"
       years <- getYears nbid
@@ -341,4 +362,5 @@ main = do
       day   <- param "day"
       notes <- getNotesByDay nbid year month day
       json notes
+
 
