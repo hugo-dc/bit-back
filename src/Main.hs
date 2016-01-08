@@ -7,6 +7,7 @@ import           Data.Aeson (FromJSON, ToJSON, decode, encode)
 import qualified Data.ByteString.Lazy.Char8 as BS
 import           Data.Monoid ((<>))
 import           Data.Text.Lazy (Text, unpack, pack)
+import           Data.Text.Lazy.Encoding (decodeUtf8)
 import           Data.Time.Calendar
 import           Data.Time.Clock
 import           Data.Time.Clock.POSIX
@@ -39,11 +40,28 @@ data Note = Note { ntId     :: Int,
                    nHtml    :: String
                  } deriving (Show, Generic)
 
+
+data CrNote  = CrNote {
+  crNbId    :: Integer,
+  crTitle   :: String,
+  crContent :: String
+  } deriving (Show, Generic)
+
+data UpdNote = UpdNote {
+  updId    :: Integer,
+  updTitle :: String,
+  updContent :: String
+  } deriving (Show, Generic)
+  
+
 data DBInt = DBInt { dbInt :: Int } deriving (Show)
 data DBStr = DBStr { dbStr :: String } deriving (Show)
 
 instance ToJSON Notebook
 instance FromJSON Notebook
+
+instance FromJSON UpdNote
+instance FromJSON CrNote
 
 instance FromRow Notebook where
   fromRow = Notebook <$> field <*> field <*> field <*> field <*> field
@@ -133,32 +151,31 @@ getNotebookId name = do
     Nothing -> error "Notebook not found"
     Just n  -> return $  nbId n
 
-updateNote :: Integer -> Text -> Text -> ActionM Result
+updateNote :: Integer -> String -> String -> ActionM Result
 updateNote ntid ntitle nmd = do
   liftIO $ updateNote' ntid ntitle nmd
   return $ Result True "Note updated!"
 
-updateNote' :: Integer -> Text -> Text -> IO ()
+updateNote' :: Integer -> String -> String -> IO ()
 updateNote' ntid ntitle nmd = do
-  html <- getHtml (unpack nmd)
+  html <- getHtml nmd
   conn <- open dbFile
-  execute conn "UPDATE notes SET title = ? WHERE id = ?"   (unpack ntitle, ntid)
-  execute conn "UPDATE notes SET content = ? WHERE id = ?" (unpack nmd, ntid)
+  execute conn "UPDATE notes SET title = ? WHERE id = ?"   (ntitle, ntid)
+  execute conn "UPDATE notes SET content = ? WHERE id = ?" (nmd, ntid)
   execute conn "UPDATE notes SET html = ? WHERE id = ?"    (html, ntid)
   close conn
   
-
-createNote :: Integer -> Text -> Text -> ActionM Result
+createNote :: Integer -> String -> String -> ActionM Result
 createNote nbid ntitle nmd = do
   liftIO $ createNote' nbid ntitle nmd
   return $ Result True "Note created!"
 
-createNote' :: Integer -> Text -> Text -> IO ()
+createNote' :: Integer -> String -> String -> IO ()
 createNote' nbid ntitle nmd = do
-  html <- getHtml (unpack nmd)
+  html <- getHtml nmd
   conn <- open dbFile
   (year, month, day) <- getDMY
-  execute conn "INSERT INTO notes (parent, year, month, day, title, content, html) VALUES (?,?,?,?,?,?,?)" (Note 0 (fromIntegral nbid) (fromIntegral year) month day (unpack ntitle) (unpack nmd) html)
+  execute conn "INSERT INTO notes (parent, year, month, day, title, content, html) VALUES (?,?,?,?,?,?,?)" (Note 0 (fromIntegral nbid) (fromIntegral year) month day ntitle nmd html)
   close conn
 
 createDefaultNote :: Text -> IO ()
@@ -166,8 +183,7 @@ createDefaultNote name = do
   nbId  <- getNotebookId name
   defmd <- getDefaultMarkdown
   html  <- getHtml defmd
-  createNote' (fromIntegral nbId) "Your First Note" (pack defmd)
-
+  createNote' (fromIntegral nbId) "Your First Note" defmd
   
 createNotebook :: Text -> Text -> ActionM Result
 createNotebook name desc = do
@@ -328,18 +344,30 @@ main = do
       nbid <- param "nbid"
       note <- getLastNote nbid
       json note
-    get "/create-note/:nbid/:ntitle/:nmd" $ do
-      nbid   <- param "nbid"
-      ntitle <- param "ntitle"
-      nmd    <- param "nmd"
-      result <- createNote nbid ntitle nmd
-      json result
-    get "/update-note/:ntid/:ntitle/:nmd" $ do
-      ntid   <- param "ntid"
-      ntitle <- param "ntitle"
-      nmd    <- param "nmd"
-      result <- updateNote ntid ntitle nmd
-      json result
+    post "/create-note" $ do
+      d <- body
+      let n = decode d :: Maybe CrNote
+      case n of
+        Just dt -> do
+          r <- createNote (crNbId dt) (crTitle dt) (crContent dt)
+          json r
+        _ -> raise "Wrong REQUEST"
+
+--    get "/create-note/:nbid/:ntitle/:nmd" $ do
+--      nbid   <- param "nbid"
+--      ntitle <- param "ntitle"
+--      nmd    <- param "nmd"
+--      result <- createNote nbid ntitle nmd
+--      json result
+    post "/update-note" $ do
+      d <- body
+      let n = decode d :: Maybe UpdNote
+      case n of
+        Just dt -> do
+          r <- updateNote (updId dt) (updTitle dt) (updContent dt)
+          json r
+        _       -> raise "Wrong REQUEST"
+
     get "/get-years/:nbid" $ do
       nbid <- param "nbid"
       years <- getYears nbid
