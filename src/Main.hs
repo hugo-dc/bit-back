@@ -207,6 +207,32 @@ getNoteByName' nbook noteid = do
   conn <- open dbFile
   getNote' (toInteger nbid) noteid
 
+getPrevNote :: Integer -> Integer -> ActionM Note
+getPrevNote nbid ntid = do
+  note <- liftIO (getPrevNote' nbid ntid)
+  return note
+
+getPrevNote' :: Integer -> Integer -> IO Note
+getPrevNote' nbid ntid = do
+  conn <- open dbFile
+  c <- query conn "SELECT MAX(id) FROM notes WHERE id < ? AND parent = ?" [ntid, nbid] :: IO [DBInt]
+  let nid = (dbInt . head) c
+  note <- getNote' nbid (toInteger nid)
+  return note
+
+getNextNote :: Integer -> Integer -> ActionM Note
+getNextNote nbid ntid = do
+  note <- liftIO (getNextNote' nbid ntid)
+  return note
+
+getNextNote' :: Integer -> Integer -> IO Note
+getNextNote' nbid ntid = do
+  conn <- open dbFile
+  c <- query conn "SELECT id FROM notes WHERE id > ? AND parent = ?" [ntid, nbid] :: IO [DBInt]
+  let nid = (dbInt . head ) c
+  note <- getNote' nbid (toInteger nid)
+  return note
+
 getNote :: Integer -> Integer -> ActionM Note
 getNote nbid ntid = do
   note <- liftIO (getNote' nbid ntid)
@@ -326,6 +352,16 @@ main = do
     get "/get-notebooks" $ do
       nbs <- getNotebooks
       json nbs
+    get "/get-prev/:nbid/:ntid" $ do
+      nbid <- param "nbid"
+      ntid <- param "ntid"
+      note <- getPrevNote (read nbid :: Integer) ntid
+      json note
+    get "/get-next/:nbid/:ntid" $ do
+      nbid <- param "nbid"
+      ntid <- param "ntid"
+      note <- getNextNote (read nbid :: Integer) ntid
+      json note
     get "/get-note/:nbid/:ntid" $ do
       nbid <- param "nbid"
       ntid <- param "ntid"
