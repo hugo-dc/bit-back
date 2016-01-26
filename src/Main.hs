@@ -15,6 +15,7 @@ import           Database.SQLite.Simple
 import           Database.SQLite.Simple.FromRow
 import           GHC.Generics
 import           System.Directory
+import           System.Exit
 import           System.IO
 import           System.Process
 import           Web.Scotty
@@ -117,15 +118,23 @@ getDefaultMarkdown = do
   md <- readFile defMD
   return md
 
+-- 
 getHtml :: String -> IO String
 getHtml markdown = do
    (y,m,d) <- getDMY
-   let fname = (show y) ++ "-" ++ (show m) ++ "-" ++ (show d)
+   putStrLn $ show y
+   putStrLn $ add0 m
+   putStrLn $ add0 d
+   let fname = (show y) ++ "-" ++ (add0 m) ++ "-" ++ (add0 d)
+   putStrLn fname
    writeFile ("./bin/posts/" ++ fname ++ "-test.md") markdown
    cudir <- getCurrentDirectory
    callCommand (cudir ++ "\\bin\\build.bat" )
    html <- readFile (".\\bin\\_site\\posts\\" ++ fname ++ "-test.html")
    return html
+   where add0 x | (x < 10)  = "0" ++ (show x)
+                | otherwise = show x
+
 
 safe :: ([t] -> a) -> [t] -> Maybe a
 safe f [] = Nothing
@@ -318,24 +327,24 @@ getDays' nbid year month = do
   close conn
   return $ map dbInt c
 
-getNotesByDay :: Integer -> Integer -> Integer -> Integer -> ActionM [String]
+getNotesByDay :: Integer -> Integer -> Integer -> Integer -> ActionM [Note]
 getNotesByDay nbid year month day = do
   notes <- liftIO $ getNotesByDay' nbid year month day
   return notes
 
-getNotesByDay' :: Integer -> Integer -> Integer -> Integer -> IO [String]
+getNotesByDay' :: Integer -> Integer -> Integer -> Integer -> IO [Note]
 getNotesByDay' nbid year month day = do
   conn <- open dbFile
   c <- query
        conn
-       "SELECT title FROM notes WHERE parent = ? AND year = ? AND month = ? AND day = ?" 
+       "SELECT * FROM notes WHERE parent = ? AND year = ? AND month = ? AND day = ?" 
        [(fromInteger nbid :: Int)
        ,(fromInteger year :: Int)
        ,(fromInteger month :: Int)
        ,(fromInteger day   :: Int)]
-       :: IO [DBStr]
+       :: IO [Note]
   close conn
-  return $ map dbStr c
+  return c
 
 
 main :: IO ()
@@ -389,12 +398,6 @@ main = do
           json r
         _ -> raise "Wrong REQUEST"
 
---    get "/create-note/:nbid/:ntitle/:nmd" $ do
---      nbid   <- param "nbid"
---      ntitle <- param "ntitle"
---      nmd    <- param "nmd"
---      result <- createNote nbid ntitle nmd
---      json result
     post "/update-note" $ do
       d <- body
       let n = decode d :: Maybe UpdNote
