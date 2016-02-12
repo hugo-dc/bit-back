@@ -173,6 +173,20 @@ updateNote' ntid ntitle nmd = do
   execute conn "UPDATE notes SET content = ? WHERE id = ?" (nmd, ntid)
   execute conn "UPDATE notes SET html = ? WHERE id = ?"    (html, ntid)
   close conn
+
+deleteNote :: Integer -> ActionM Result
+deleteNote ntid = do
+  liftIO $ deleteNote' ntid
+  return $ Result True "Note deleted!"
+
+deleteNote' :: Integer -> IO ()
+deleteNote' ntid = do
+-- We need if note exists before deleting  
+  conn <- open dbFile
+  r <- query conn "DELETE FROM notes WHERE id = ?" [(ntid)] :: IO [[Integer]]
+  putStrLn $ show r
+  close conn
+-- We need to check if note exists after deleting  
   
 createNote :: Integer -> String -> String -> ActionM Result
 createNote nbid ntitle nmd = do
@@ -407,6 +421,10 @@ main = do
           json r
         _       -> raise "Wrong REQUEST"
 
+    get "/delete-note/:ntid" $ do
+      ntid <- param "ntid"
+      res <- deleteNote ntid
+      json res
     get "/get-years/:nbid" $ do
       nbid <- param "nbid"
       years <- getYears nbid
