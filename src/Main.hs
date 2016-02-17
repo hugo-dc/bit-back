@@ -20,26 +20,35 @@ import           System.IO
 import           System.Process
 import           Web.Scotty
 
-data Result = Result { successR  :: Bool,
-                       messageR  :: String
-                     } deriving (Show, Generic)
 
-data Notebook = Notebook { nbId   :: Int,
-                           nbName :: String,
-                           nbDesc :: String,
-                           nbIcon :: String,
-                           nbClick :: String
-                         } deriving (Show, Generic)
+-- Data
+data DBTable = DBTable {
+       dbTable :: String
+  }
+  
+data Result = Result {
+  successR  :: Bool,
+  messageR  :: String
+  } deriving (Show, Generic)
 
-data Note = Note { ntId     :: Int,
-                   parentId :: Int,
-                   ntYear   :: Int,
-                   ntMonth  :: Int,
-                   ntDay    :: Int,
-                   nTitle   :: String,
-                   nContent :: String,
-                   nHtml    :: String
-                 } deriving (Show, Generic)
+data Notebook = Notebook {
+  nbId   :: Int,
+  nbName :: String,
+  nbDesc :: String,
+  nbIcon :: String,
+  nbClick :: String
+  } deriving (Show, Generic)
+
+data Note = Note {
+  ntId     :: Int,
+  parentId :: Int,
+  ntYear   :: Int,
+  ntMonth  :: Int,
+  ntDay    :: Int,
+  nTitle   :: String,
+  nContent :: String,
+  nHtml    :: String
+  } deriving (Show, Generic)
 
 
 data CrNote  = CrNote {
@@ -53,16 +62,34 @@ data UpdNote = UpdNote {
   updTitle :: String,
   updContent :: String
   } deriving (Show, Generic)
-  
 
-data DBInt = DBInt { dbInt :: Int } deriving (Show)
-data DBStr = DBStr { dbStr :: String } deriving (Show)
+data Favorite = Favorite {
+  fvId :: Int,
+  noteId :: Int
+  } deriving (Show, Generic)
+
+data DBInt = DBInt {
+  dbInt :: Int
+  } deriving (Show)
+
+data DBStr = DBStr {
+  dbStr :: String
+  } deriving (Show)
+
+
+-- Instances
 
 instance ToJSON Notebook
 instance FromJSON Notebook
 
 instance FromJSON UpdNote
 instance FromJSON CrNote
+
+instance ToJSON Note
+instance FromJSON Note
+
+instance ToJSON Result
+instance FromJSON Result
 
 instance FromRow Notebook where
   fromRow = Notebook <$> field <*> field <*> field <*> field <*> field
@@ -76,26 +103,36 @@ instance ToRow Note where
 instance FromRow Note where
   fromRow = Note <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
 
+instance FromRow Favorite where
+  fromRow = Favorite <$> field <*> field 
+  
+instance ToRow Favorite where
+  toRow (Favorite id note) = toRow [note]
+
 instance FromRow DBInt where
   fromRow = DBInt <$> field
 
 instance FromRow DBStr where
   fromRow = DBStr <$> field
 
-instance ToJSON Note
-instance FromJSON Note
-
-instance ToJSON Result
-instance FromJSON Result
+instance FromRow DBTable where
+  fromRow = DBTable <$> field 
 
 instance Read Notebook
 
+-- Functions
+
+-- | SQLite database
 dbFile = "resources/database"
+
+-- | Default note file
 defMD  = "resources/default_note"
 
+-- | Get current timestamp
 getDMY :: IO (Integer, Int, Int)
 getDMY = getCurrentTime >>= return . toGregorian .utctDay
 
+-- | Checks note existence
 notebookExists :: Text -> IO Bool
 notebookExists name = do
   conn <- open dbFile
@@ -105,7 +142,7 @@ notebookExists name = do
   close conn
   return ex
 
-
+-- | Create new Notebook
 addNotebook :: Text -> Text -> IO ()
 addNotebook name desc = do
   conn <- open dbFile
@@ -113,12 +150,13 @@ addNotebook name desc = do
     (Notebook 0 (unpack name) (unpack desc) "fa-edit" ("openNotebook('" ++ (unpack name ) ++ "'"))
   close conn
 
+-- | Get default note's markdown
 getDefaultMarkdown :: IO String
 getDefaultMarkdown = do
   md <- readFile defMD
   return md
 
--- 
+-- | Using Hakyll converts Markdown to HTML
 getHtml :: String -> IO String
 getHtml markdown = do
    (y,m,d) <- getDMY
@@ -135,11 +173,12 @@ getHtml markdown = do
    where add0 x | (x < 10)  = "0" ++ (show x)
                 | otherwise = show x
 
-
+-- | Safe f
 safe :: ([t] -> a) -> [t] -> Maybe a
 safe f [] = Nothing
 safe f x = Just (f x)
 
+-- | Return a Notebook based on its name
 getNotebookByName :: Text -> ActionM Notebook
 getNotebookByName name = do
   nb <- liftIO (getNotebookByName' name)
@@ -152,14 +191,16 @@ getNotebookByName' name = do
   conn <- open dbFile
   r <- query conn "SELECT * FROM notebooks WHERE name = ?" [(unpack name)] :: IO [Notebook]
   return $ safe head r
-  
+
+-- | Get Note Id based on its name  
 getNotebookId :: Text -> IO Int
 getNotebookId name = do
   nb <- getNotebookByName' name
   case nb of
     Nothing -> error "Notebook not found"
     Just n  -> return $  nbId n
-
+    
+-- | Update Note
 updateNote :: Integer -> String -> String -> ActionM Result
 updateNote ntid ntitle nmd = do
   liftIO $ updateNote' ntid ntitle nmd
@@ -174,6 +215,7 @@ updateNote' ntid ntitle nmd = do
   execute conn "UPDATE notes SET html = ? WHERE id = ?"    (html, ntid)
   close conn
 
+-- | Delete Note
 deleteNote :: Integer -> ActionM Result
 deleteNote ntid = do
   liftIO $ deleteNote' ntid
@@ -181,13 +223,78 @@ deleteNote ntid = do
 
 deleteNote' :: Integer -> IO ()
 deleteNote' ntid = do
--- We need if note exists before deleting  
+-- | We need if note exists before deleting  
   conn <- open dbFile
   r <- query conn "DELETE FROM notes WHERE id = ?" [(ntid)] :: IO [[Integer]]
   putStrLn $ show r
   close conn
 -- We need to check if note exists after deleting  
+
+
+-- | Favorite Note
+favNote :: Integer -> ActionM Result
+favNote ntid = do
+  liftIO $ favNote' ntid
+  return $ Result True "Note is in favorites now"
+
+favNote' :: Integer -> IO ()
+favNote' ntid = do
+  conn <- open dbFile
+  execute conn "INSERT INTO favorites (note) VALUES (?)" (Favorite 0 (fromIntegral ntid))
+  close conn
+
+-- | Remove note from favorites
+unfavNote :: Integer -> ActionM Result
+unfavNote ntid = do
+  liftIO $ unfavNote' ntid
+  return $ Result True "Note is not favorite"
+
+unfavNote' :: Integer -> IO ()
+unfavNote' ntid = do
+  conn <- open dbFile
+  r <- query conn "DELETE FROM favorites WHERE note = ?" [(ntid)] :: IO [[Integer]]
+  close conn
+
+-- | Get Favorite Notes
+getFavorites :: ActionM [Note]
+getFavorites = do
+  res <- liftIO getFavorites'
+  return res
+
+getFavorites' :: IO [Note]
+getFavorites' = do
+  conn <- open dbFile
+  r <- query
+         conn
+         "SELECT * FROM favorites"
+         () :: IO [Favorite]
+  close conn
+  if null r then
+    return []
+  else do
+    return []
   
+-- | Checks if note is in favorites
+isFav :: Integer -> ActionM Result
+isFav ntid = do
+  fav <- liftIO $ isFav' ntid
+  case fav of
+    True  -> return $ Result True  "Note is favorite"
+    False -> return $ Result False "Note is not favorite"
+
+isFav' :: Integer -> IO Bool
+isFav' ntid = do
+  conn <- open dbFile
+  r <- query
+         conn
+         "SELECT * FROM favorites WHERE note = ?"
+         [ntid] :: IO [Favorite]
+  close conn
+  if null r then
+    return False
+  else return True
+  
+-- | Create Note  
 createNote :: Integer -> String -> String -> ActionM Result
 createNote nbid ntitle nmd = do
   liftIO $ createNote' nbid ntitle nmd
@@ -201,13 +308,15 @@ createNote' nbid ntitle nmd = do
   execute conn "INSERT INTO notes (parent, year, month, day, title, content, html) VALUES (?,?,?,?,?,?,?)" (Note 0 (fromIntegral nbid) (fromIntegral year) month day ntitle nmd html)
   close conn
 
+-- | Create default Note
 createDefaultNote :: Text -> IO ()
 createDefaultNote name = do
   nbId  <- getNotebookId name
   defmd <- getDefaultMarkdown
   html  <- getHtml defmd
   createNote' (fromIntegral nbId) "Your First Note" defmd
-  
+
+-- | Create Notebook  
 createNotebook :: Text -> Text -> ActionM Result
 createNotebook name desc = do
   nbEx <- liftIO (notebookExists name)
@@ -218,18 +327,7 @@ createNotebook name desc = do
     liftIO $ createDefaultNote name
     return $ Result True "Notebook created"
 
--- | Get note using Notebook Name and Note ID
-getNoteByName :: Text -> Integer -> ActionM Note
-getNoteByName nbook noteid = do
-  note <- liftIO (getNoteByName' nbook noteid)
-  return note
-
-getNoteByName' :: Text -> Integer -> IO Note
-getNoteByName' nbook noteid = do
-  nbid <- getNotebookId nbook
-  conn <- open dbFile
-  getNote' (toInteger nbid) noteid
-
+-- | Get Previous Note
 getPrevNote :: Integer -> Integer -> ActionM Note
 getPrevNote nbid ntid = do
   note <- liftIO (getPrevNote' nbid ntid)
@@ -240,9 +338,10 @@ getPrevNote' nbid ntid = do
   conn <- open dbFile
   c <- query conn "SELECT MAX(id) FROM notes WHERE id < ? AND parent = ?" [ntid, nbid] :: IO [DBInt]
   let nid = (dbInt . head) c
-  note <- getNote' nbid (toInteger nid)
+  note <- getNote' (toInteger nid)
   return note
 
+-- | Get Next Note
 getNextNote :: Integer -> Integer -> ActionM Note
 getNextNote nbid ntid = do
   note <- liftIO (getNextNote' nbid ntid)
@@ -253,29 +352,30 @@ getNextNote' nbid ntid = do
   conn <- open dbFile
   c <- query conn "SELECT id FROM notes WHERE id > ? AND parent = ?" [ntid, nbid] :: IO [DBInt]
   let nid = (dbInt . head ) c
-  note <- getNote' nbid (toInteger nid)
+  note <- getNote' (toInteger nid)
   return note
 
-getNote :: Integer -> Integer -> ActionM Note
-getNote nbid ntid = do
-  note <- liftIO (getNote' nbid ntid)
+-- | Get Note using Note ID
+getNote :: Integer -> ActionM Note
+getNote ntid = do
+  note <- liftIO (getNote' ntid)
   return note
 
-getNote' :: Integer -> Integer -> IO Note
-getNote' nbid ntid = do
-  let nb = fromInteger nbid :: Int 
+getNote' :: Integer -> IO Note
+getNote' ntid = do
   let nt = fromInteger ntid :: Int
   conn <- open dbFile
   r <- query
          conn
-         "SELECT * FROM notes WHERE id = ? AND parent = ?"
-         [nt,nb] :: IO [Note]
+         "SELECT * FROM notes WHERE id = ?"
+         [nt] :: IO [Note]
   close conn
   if null r then
     error "Note not found!"
   else
     return $ head r
 
+-- | Get Notebooks
 getNotebooks :: ActionM [Notebook]
 getNotebooks = do
    nbs <- liftIO getNotebooks'
@@ -288,6 +388,7 @@ getNotebooks' = do
    close conn
    return r
 
+-- | Get Last Note
 getLastNote :: Int -> ActionM Note
 getLastNote nbid = do
   note <- liftIO (getLastNote' nbid)
@@ -305,6 +406,7 @@ getLastNote' nbid = do
     Nothing -> error "Note not found!"
     Just n  -> return n
 
+-- | Get years of all notes
 getYears :: Integer -> ActionM [Int]
 getYears nbid = do
   years <- liftIO $ getYears' nbid
@@ -317,6 +419,7 @@ getYears' nbid = do
   close conn
   return $ map dbInt c
 
+-- | Get all months for the current year
 getMonths :: Integer -> Integer -> ActionM [Int]
 getMonths nbid year = do
   months <- liftIO $ getMonths' nbid year
@@ -329,6 +432,7 @@ getMonths' nbid year = do
   close conn
   return $ map dbInt c
 
+-- | Get days of the current Month/Year
 getDays :: Integer -> Integer -> Integer -> ActionM [Int]
 getDays nbid year month = do
   days <- liftIO $ getDays' nbid year month
@@ -341,6 +445,7 @@ getDays' nbid year month = do
   close conn
   return $ map dbInt c
 
+-- | Get all the notes for all Year/Month/Day
 getNotesByDay :: Integer -> Integer -> Integer -> Integer -> ActionM [Note]
 getNotesByDay nbid year month day = do
   notes <- liftIO $ getNotesByDay' nbid year month day
@@ -361,12 +466,64 @@ getNotesByDay' nbid year month day = do
   return c
 
 
+-- | Get Table definition
+createTab :: String -> Connection -> IO ()
+createTab t conn
+  | t  == "notebooks" = do
+      execute_
+        conn
+        "CREATE TABLE notebooks ( id INTEGER PRIMARY KEY, name TEXT, description TEXT, icon TEXT, click TEXT)"
+  | t == "notes"      = do
+      execute_
+        conn
+        "CREATE TABLE notes ( id INTEGER PRIMARY KEY, parent NUMERIC, year NUMERIC, month NUMERIC, day NUMERIC, title TEXT, content TEXT, html TEXT)"
+  | t == "favorites"  = do
+      execute_
+        conn
+        "CREATE TABLE favorites ( id INTEGER PRIMARY KEY, note NUMERIC )"
+
+-- | Check single table
+checkTable :: String -> ActionM ()
+checkTable tname = do
+  liftIO $ checkTable' tname
+
+checkTable' :: String -> IO ()
+checkTable' tname = do
+  conn <- open dbFile
+  c <- query
+       conn
+       "SELECT name FROM sqlite_master WHERE type = ? AND name = ?"
+       ["table" :: String,
+        tname   :: String ] :: IO [DBTable]
+
+  if null c then do
+    createTab tname conn
+  else return ()
+  close conn    
+
+-- | Check tables in DB
+checkTables :: ActionM ()
+checkTables = do
+  checkTable "notebooks"
+  checkTable "notes"
+  checkTable "favorites"
+  
+
+-- | Checks system
+startup :: ActionM Result
+startup = do
+  res <- checkTables
+  return $ (Result True "API v0.2")
+
+-- Main Function
 main :: IO ()
 main = do
   putStrLn "Starting server..."
   scotty 3000 $ do
     get "/api-ready" $ do
-      json (Result True "API v0.1")
+      res <- startup
+      json res
+
     get "/create-notebook/:name/:desc" $ do
       name <- param "name"
       desc <- param "desc"
@@ -385,15 +542,9 @@ main = do
       ntid <- param "ntid"
       note <- getNextNote (read nbid :: Integer) ntid
       json note
-    get "/get-note/:nbid/:ntid" $ do
-      nbid <- param "nbid"
+    get "/get-note/:ntid" $ do
       ntid <- param "ntid"
-      note <- getNote (read nbid :: Integer) (read ntid :: Integer )
-      json note
-    get "/get-note-by-nb-name/:nbook/:noteid" $ do
-      nbook  <- param "nbook"
-      noteid <- param "noteid"
-      note <- getNoteByName nbook (read noteid :: Integer)
+      note <- getNote (read ntid :: Integer )
       json note
     get "/get-notebook-by-name/:nbook" $ do
       name <- param "nbook"
@@ -410,7 +561,7 @@ main = do
         Just dt -> do
           r <- createNote (crNbId dt) (crTitle dt) (crContent dt)
           json r
-        _ -> raise "Wrong REQUEST"
+        _ -> json $ Result False "Note cannot be created"
 
     post "/update-note" $ do
       d <- body
@@ -419,11 +570,26 @@ main = do
         Just dt -> do
           r <- updateNote (updId dt) (updTitle dt) (updContent dt)
           json r
-        _       -> raise "Wrong REQUEST"
+        _       -> json $ Result False "Note cannot be updated"
 
     get "/delete-note/:ntid" $ do
       ntid <- param "ntid"
       res <- deleteNote ntid
+      json res
+    get "/fav-note/:ntid" $ do
+      ntid <- param "ntid"
+      res <- favNote ntid
+      json res
+    get "/unfav-note/:ntid" $ do
+      ntid <- param "ntid"
+      res <- unfavNote ntid
+      json res
+    get "/get-favs" $ do
+      res <- getFavorites
+      json res
+    get "/is-fav/:ntid" $ do
+      ntid <- param "ntid"
+      res <- isFav ntid
       json res
     get "/get-years/:nbid" $ do
       nbid <- param "nbid"
@@ -447,5 +613,4 @@ main = do
       day   <- param "day"
       notes <- getNotesByDay nbid year month day
       json notes
-
 
