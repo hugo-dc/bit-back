@@ -34,9 +34,7 @@ data Result = Result {
 data Notebook = Notebook {
   nbId   :: Int,
   nbName :: String,
-  nbDesc :: String,
-  nbIcon :: String,
-  nbClick :: String
+  nbDesc :: String
   } deriving (Show, Generic)
 
 data Note = Note {
@@ -46,8 +44,7 @@ data Note = Note {
   ntMonth  :: Int,
   ntDay    :: Int,
   nTitle   :: String,
-  nContent :: String,
-  nHtml    :: String
+  nContent :: String
   } deriving (Show, Generic)
 
 
@@ -91,17 +88,19 @@ instance FromJSON Note
 instance ToJSON Result
 instance FromJSON Result
 
+instance ToJSON Favorite
+
 instance FromRow Notebook where
-  fromRow = Notebook <$> field <*> field <*> field <*> field <*> field
+  fromRow = Notebook <$> field <*> field <*> field
 
 instance ToRow Notebook where
-  toRow (Notebook id name desc icon click) = toRow (name, desc, icon, click)
+  toRow (Notebook id name desc) = toRow (name, desc)
 
 instance ToRow Note where
-  toRow (Note id parent y m d title md html ) = toRow (parent, y,m,d,title,md,html)
+  toRow (Note id parent y m d title cont) = toRow (parent, y,m,d,title,cont)
 
 instance FromRow Note where
-  fromRow = Note <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+  fromRow = Note <$> field <*> field <*> field <*> field <*> field <*> field <*> field 
 
 instance FromRow Favorite where
   fromRow = Favorite <$> field <*> field 
@@ -123,7 +122,7 @@ instance Read Notebook
 -- Functions
 
 -- | SQLite database
-dbFile = "resources/database"
+dbFile = "resources/bitacorapp.db"
 
 -- | Default note file
 defMD  = "resources/default_note"
@@ -146,32 +145,15 @@ notebookExists name = do
 addNotebook :: Text -> Text -> IO ()
 addNotebook name desc = do
   conn <- open dbFile
-  execute conn "INSERT INTO notebooks (name, description, icon, click) VALUES (?, ?, ?, ?)"
-    (Notebook 0 (unpack name) (unpack desc) "fa-edit" ("openNotebook('" ++ (unpack name ) ++ "'"))
+  execute conn "INSERT INTO notebooks (name, description) VALUES (?, ?)"
+    (Notebook 0 (unpack name) (unpack desc))
   close conn
 
 -- | Get default note's markdown
-getDefaultMarkdown :: IO String
-getDefaultMarkdown = do
+getDefaultNote :: IO String
+getDefaultNote = do
   md <- readFile defMD
   return md
-
--- | Using Hakyll converts Markdown to HTML
-getHtml :: String -> IO String
-getHtml markdown = do
-   (y,m,d) <- getDMY
-   putStrLn $ show y
-   putStrLn $ add0 m
-   putStrLn $ add0 d
-   let fname = (show y) ++ "-" ++ (add0 m) ++ "-" ++ (add0 d)
-   putStrLn fname
-   writeFile ("./bin/posts/" ++ fname ++ "-test.md") markdown
-   cudir <- getCurrentDirectory
-   callCommand (cudir ++ "\\bin\\build.bat" )
-   html <- readFile (".\\bin\\_site\\posts\\" ++ fname ++ "-test.html")
-   return html
-   where add0 x | (x < 10)  = "0" ++ (show x)
-                | otherwise = show x
 
 -- | Safe f
 safe :: ([t] -> a) -> [t] -> Maybe a
@@ -208,11 +190,9 @@ updateNote ntid ntitle nmd = do
 
 updateNote' :: Integer -> String -> String -> IO ()
 updateNote' ntid ntitle nmd = do
-  html <- getHtml nmd
   conn <- open dbFile
   execute conn "UPDATE notes SET title = ? WHERE id = ?"   (ntitle, ntid)
   execute conn "UPDATE notes SET content = ? WHERE id = ?" (nmd, ntid)
-  execute conn "UPDATE notes SET html = ? WHERE id = ?"    (html, ntid)
   close conn
 
 -- | Delete Note
@@ -256,12 +236,12 @@ unfavNote' ntid = do
   close conn
 
 -- | Get Favorite Notes
-getFavorites :: ActionM [Note]
+getFavorites :: ActionM [Favorite]
 getFavorites = do
   res <- liftIO getFavorites'
   return res
 
-getFavorites' :: IO [Note]
+getFavorites' :: IO [Favorite]
 getFavorites' = do
   conn <- open dbFile
   r <- query
@@ -272,7 +252,7 @@ getFavorites' = do
   if null r then
     return []
   else do
-    return []
+    return r
   
 -- | Checks if note is in favorites
 isFav :: Integer -> ActionM Result
@@ -301,19 +281,17 @@ createNote nbid ntitle nmd = do
   return $ Result True "Note created!"
 
 createNote' :: Integer -> String -> String -> IO ()
-createNote' nbid ntitle nmd = do
-  html <- getHtml nmd
+createNote' nbid ntitle content = do
   conn <- open dbFile
   (year, month, day) <- getDMY
-  execute conn "INSERT INTO notes (parent, year, month, day, title, content, html) VALUES (?,?,?,?,?,?,?)" (Note 0 (fromIntegral nbid) (fromIntegral year) month day ntitle nmd html)
+  execute conn "INSERT INTO notes (parent, year, month, day, title, content) VALUES (?,?,?,?,?,?)" (Note 0 (fromIntegral nbid) (fromIntegral year) month day ntitle content)
   close conn
 
 -- | Create default Note
 createDefaultNote :: Text -> IO ()
 createDefaultNote name = do
   nbId  <- getNotebookId name
-  defmd <- getDefaultMarkdown
-  html  <- getHtml defmd
+  defmd <- getDefaultNote
   createNote' (fromIntegral nbId) "Your First Note" defmd
 
 -- | Create Notebook  
@@ -472,11 +450,11 @@ createTab t conn
   | t  == "notebooks" = do
       execute_
         conn
-        "CREATE TABLE notebooks ( id INTEGER PRIMARY KEY, name TEXT, description TEXT, icon TEXT, click TEXT)"
+        "CREATE TABLE notebooks ( id INTEGER PRIMARY KEY, name TEXT, description TEXT)"
   | t == "notes"      = do
       execute_
         conn
-        "CREATE TABLE notes ( id INTEGER PRIMARY KEY, parent NUMERIC, year NUMERIC, month NUMERIC, day NUMERIC, title TEXT, content TEXT, html TEXT)"
+        "CREATE TABLE notes ( id INTEGER PRIMARY KEY, parent NUMERIC, year NUMERIC, month NUMERIC, day NUMERIC, title TEXT, content TEXT)"
   | t == "favorites"  = do
       execute_
         conn
@@ -515,11 +493,22 @@ startup = do
   res <- checkTables
   return $ (Result True "API v0.2")
 
+--------------------------------
+dev = True
+
+getPort :: Int
+getPort 
+  | dev       = 3001
+  | otherwise = 3000
+
 -- Main Function
 main :: IO ()
 main = do
   putStrLn "Starting server..."
-  scotty 3000 $ do
+  
+  let port = getPort
+  
+  scotty port $ do
     get "/api-ready" $ do
       res <- startup
       json res
@@ -556,12 +545,13 @@ main = do
       json note
     post "/create-note" $ do
       d <- body
+      liftIO $ putStrLn (show d)
       let n = decode d :: Maybe CrNote
       case n of
         Just dt -> do
           r <- createNote (crNbId dt) (crTitle dt) (crContent dt)
           json r
-        _ -> json $ Result False "Note cannot be created"
+        _ -> json $ Result False (show d) --"Note cannot be created"
 
     post "/update-note" $ do
       d <- body
