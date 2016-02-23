@@ -73,14 +73,19 @@ data DBStr = DBStr {
   dbStr :: String
   } deriving (Show)
 
+data Code = Code {
+  code :: String,
+  lang :: String
+  }deriving(Show, Generic)
 
 -- Instances
-
 instance ToJSON Notebook
 instance FromJSON Notebook
 
 instance FromJSON UpdNote
 instance FromJSON CrNote
+
+instance FromJSON Code
 
 instance ToJSON Note
 instance FromJSON Note
@@ -194,6 +199,20 @@ updateNote' ntid ntitle nmd = do
   execute conn "UPDATE notes SET title = ? WHERE id = ?"   (ntitle, ntid)
   execute conn "UPDATE notes SET content = ? WHERE id = ?" (nmd, ntid)
   close conn
+
+-- | Get HTML
+getHtml :: String -> String -> ActionM String
+getHtml code lang = do
+  html <- liftIO $ getHtml' code lang
+  return html
+
+getHtml' :: String -> String -> IO String
+getHtml' code lang = do
+  writeFile ("./bin/code.txt") code
+  cudir <- getCurrentDirectory
+  callCommand (cudir ++ "\\bin\\highlighting-kate.exe -s " ++ lang ++ " -f " ++ cudir ++ "\\bin\\code.txt > "++ cudir ++ "\\bin\\output.html")
+  html <- readFile (".\\bin\\output.html")
+  return html
 
 -- | Delete Note
 deleteNote :: Integer -> ActionM Result
@@ -562,6 +581,15 @@ main = do
           json r
         _       -> json $ Result False "Note cannot be updated"
 
+    post "/get-html" $ do
+      d <- body
+      let c = decode d :: Maybe Code
+      case c of
+        Just cobj -> do
+          r <- getHtml (code cobj) (lang cobj)
+          json $ Result True r
+        _ -> json $ Result False "Cannot generate html"
+          
     get "/delete-note/:ntid" $ do
       ntid <- param "ntid"
       res <- deleteNote ntid
