@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
+
 import           Control.Applicative
 import           Control.Monad.IO.Class (liftIO)
 import           Data.Aeson (FromJSON, ToJSON, decode, encode)
@@ -222,12 +223,27 @@ deleteNote ntid = do
 
 deleteNote' :: Integer -> IO ()
 deleteNote' ntid = do
--- | We need if note exists before deleting  
+  note <- getNote' ntid
+  
   conn <- open dbFile
   r <- query conn "DELETE FROM notes WHERE id = ?" [(ntid)] :: IO [[Integer]]
   putStrLn $ show r
-  close conn
--- We need to check if note exists after deleting  
+  
+  case note of
+    Just n -> do 
+      p <- query conn "SELECT COUNT(*) FROM notes WHERE parent = ?" [(parentId n)] :: IO [DBInt]
+      let tot = (dbInt . head) p
+      if tot == 0 then do
+        query conn "DELETE FROM notebooks WHERE id = ?" [(parentId n)]  :: IO [[Integer]]
+        query conn "DELETE FROM favorites WHERE parent = ?" [(parentId n)] :: IO [[Integer]]
+        close conn
+      else do
+        close conn
+        return ()
+    _ -> close conn
+
+  
+
 
 
 -- | Favorite Note
@@ -523,15 +539,28 @@ checkTables = do
 startup :: ActionM Result
 startup = do
   res <- checkTables
-  return $ (Result True "API v0.2")
+  return $ (Result True "API v0.3")
 
+-- | Get Notebook By Id
+getNotebook :: Integer -> ActionM (Maybe Notebook)
+getNotebook nbid = do
+  nb <- liftIO $ getNotebook' nbid
+  return nb
+
+getNotebook' :: Integer -> IO (Maybe Notebook)
+getNotebook' nbid = do
+  conn <- open dbFile
+  r <- query conn "SELECT * FROM notebooks WHERE id = ?" [nbid] :: IO [Notebook]
+  return $ safe head r
+  
 --------------------------------
+--dev = False
 dev = True
 
 getPort :: Int
 getPort 
   | dev       = 3001
-  | otherwise = 3000
+  | otherwise = 3003 -- Match API Version - sort of
 
 -- Main Function
 main :: IO ()
@@ -557,7 +586,10 @@ main = do
       nbid <- param "nbid"
       ntid <- param "ntid"
       note <- getPrevNote (read nbid :: Integer) ntid
-      json note
+      case note of
+        Just n -> json n
+        _      -> json $ Result False "No more notes"
+
     get "/get-next/:nbid/:ntid" $ do
       nbid <- param "nbid"
       ntid <- param "ntid"
@@ -649,4 +681,11 @@ main = do
       day   <- param "day"
       notes <- getNotesByDay nbid year month day
       json notes
+    get "/get-notebook/:nbid" $ do
+      nbid <- param "nbid"
+      notebook <- getNotebook nbid
+      case notebook of
+        Just n -> json n
+        _      -> json $ Result False "ID Not Found!"
+    
 
