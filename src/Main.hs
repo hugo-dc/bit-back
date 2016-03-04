@@ -67,6 +67,14 @@ data Favorite = Favorite {
   fparId :: Int          
   } deriving (Show, Generic)
 
+data FavData = FavData {
+  ffvId :: Int,
+  fnbId :: Int,
+  fntId :: Int,
+  fnbName :: String,
+  fntTitle :: String
+  } deriving(Show, Generic)
+
 data DBInt = DBInt {
   dbInt :: Int
   } deriving (Show)
@@ -96,6 +104,7 @@ instance ToJSON Result
 instance FromJSON Result
 
 instance ToJSON Favorite
+instance ToJSON FavData
 
 instance FromRow Notebook where
   fromRow = Notebook <$> field <*> field <*> field
@@ -111,6 +120,9 @@ instance FromRow Note where
 
 instance FromRow Favorite where
   fromRow = Favorite <$> field <*> field <*> field
+
+instance FromRow FavData where
+  fromRow = FavData <$> field <*> field <*> field <*> field <*> field 
   
 instance ToRow Favorite where
   toRow (Favorite id note parent) = toRow (note, parent)
@@ -125,6 +137,9 @@ instance FromRow DBTable where
   fromRow = DBTable <$> field 
 
 instance Read Notebook
+
+dev = False
+--dev = True
 
 -- Functions
 
@@ -227,6 +242,7 @@ deleteNote' ntid = do
   
   conn <- open dbFile
   r <- query conn "DELETE FROM notes WHERE id = ?" [(ntid)] :: IO [[Integer]]
+  query conn "DELETE FROM favorites WHERE note = ?" [(ntid)] :: IO [[Integer]]
   putStrLn $ show r
   
   case note of
@@ -271,18 +287,23 @@ unfavNote' ntid = do
   close conn
 
 -- | Get Favorite Notes
-getFavorites :: ActionM [Favorite]
+-- SELECT favorites.id, notebooks.id, notes.id, title, name FROM favorites
+-- 	INNER JOIN notes
+--      INNER JOIN notebooks
+--	WHERE favorites.note = notes.id
+--        AND favorites.parent = notebooks.id
+getFavorites :: ActionM [FavData]
 getFavorites = do
   res <- liftIO getFavorites'
   return res
 
-getFavorites' :: IO [Favorite]
+getFavorites' :: IO [FavData]
 getFavorites' = do
   conn <- open dbFile
   r <- query
          conn
-         "SELECT * FROM favorites"
-         () :: IO [Favorite]
+         "SELECT favorites.id, notebooks.id, notes.id, notebooks.name, notes.title FROM favorites INNER JOIN notes INNER JOIN notebooks WHERE favorites.note = notes.id AND favorites.parent = notebooks.id"
+         () :: IO [FavData]
   close conn
   if null r then
     return []
@@ -554,8 +575,7 @@ getNotebook' nbid = do
   return $ safe head r
   
 --------------------------------
---dev = False
-dev = True
+
 
 getPort :: Int
 getPort 
