@@ -138,8 +138,8 @@ instance FromRow DBTable where
 
 instance Read Notebook
 
-dev = False
---dev = True
+--dev = False
+dev = True
 
 -- Functions
 
@@ -257,10 +257,6 @@ deleteNote' ntid = do
         close conn
         return ()
     _ -> close conn
-
-  
-
-
 
 -- | Favorite Note
 favNote :: Integer -> Integer -> ActionM Result
@@ -652,6 +648,7 @@ main = do
 
     post "/get-html" $ do
       d <- body
+      liftIO $ putStrLn $ show d
       let c = decode d :: Maybe Code
       case c of
         Just cobj -> do
